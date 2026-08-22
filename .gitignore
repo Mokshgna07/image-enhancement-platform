@@ -1,0 +1,52 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+coverage/
+npm-debug.log*
+
+# ML
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+ml/checkpoints/
+ml/models/
+ml/artifacts/
+
+# Data
+data/
+datasets/
+
+# Local storage
+storage/
+uploads/
+outputs/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
