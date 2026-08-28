@@ -1,0 +1,56 @@
+seed: 42
+
+scale_factor: 4
+
+hr_patch_size: 192
+
+lr_patch_size: 48
+
+train:
+  random_crop: true
+  random_flip: true
+  random_rotation: true
+
+degradation:
+
+  blur:
+    enabled: true
+    probability: 0.80
+    kernel_size_range: [3, 7]
+    sigma_range: [0.2, 2.0]
+
+  resize:
+    enabled: true
+    probability: 1.0
+
+    interpolation:
+      - area
+      - bilinear
+      - bicubic
+      - lanczos
+
+  gaussian_noise:
+    enabled: true
+    probability: 0.70
+    sigma_range: [0.0, 0.03]
+
+  poisson_noise:
+    enabled: true
+    probability: 0.25
+    scale_range: [20.0, 60.0]
+
+  jpeg:
+    enabled: true
+    probability: 0.70
+    quality_range: [30, 95]
+
+  color_jitter:
+    enabled: true
+    probability: 0.30
+    brightness: 0.08
+    contrast: 0.08
+    saturation: 0.08
+
+  grayscale:
+    enabled: false
+    probability: 0.02
