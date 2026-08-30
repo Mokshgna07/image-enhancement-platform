@@ -32,7 +32,13 @@ ml/models/
 ml/artifacts/
 
 # Data
-data/
+# Data
+data/*
+!data/div2k/
+data/div2k/*
+!data/div2k/splits/
+data/div2k/splits/*
+!data/div2k/splits/*.txt
 datasets/
 
 # Local storage
