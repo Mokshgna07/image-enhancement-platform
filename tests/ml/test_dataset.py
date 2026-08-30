@@ -109,3 +109,39 @@ def test_dataset():
         192,
         192,
     )
+def test_validation_degradation_is_deterministic():
+    from ml.src.super_resolution.datasets import (
+        SuperResolutionDataset,
+    )
+    from ml.src.super_resolution.config import (
+        load_config,
+    )
+    import torch
+
+    config = load_config(
+        "ml/configs/degradation.yaml"
+    )
+
+    image_paths = [
+        "data/div2k/raw/DIV2K_train_HR/0001.png"
+    ]
+
+    dataset = SuperResolutionDataset(
+        image_paths=image_paths,
+        config=config,
+        split="val",
+        seed=42,
+    )
+
+    sample_a = dataset[0]
+    sample_b = dataset[0]
+
+    assert torch.equal(
+        sample_a["lr"],
+        sample_b["lr"],
+    )
+
+    assert torch.equal(
+        sample_a["hr"],
+        sample_b["hr"],
+    )

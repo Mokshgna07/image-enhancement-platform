@@ -15,9 +15,7 @@ from .transforms import (
 )
 
 
-class SuperResolutionDataset(
-    Dataset
-):
+class SuperResolutionDataset(Dataset):
 
     def __init__(
         self,
@@ -38,6 +36,7 @@ class SuperResolutionDataset(
 
         self.config = config
         self.split = split
+        self.seed = seed
 
         self.scale_factor = int(
             config["scale_factor"]
@@ -88,55 +87,63 @@ class SuperResolutionDataset(
         self,
         index: int,
     ):
-
         path = self.image_paths[index]
 
         hr = self._load_image(path)
 
         if self.split == "train":
-
             hr = random_crop(
                 hr,
                 self.hr_patch_size,
             )
 
-            if self.config[
-                "train"
-            ].get(
-                "random_flip",
-                True,
-            ) or self.config[
-                "train"
-            ].get(
-                "random_rotation",
-                True,
-            ):
-                hr = random_flip_rotate(
-                    hr
+            if (
+                self.config["train"].get(
+                    "random_flip",
+                    True,
                 )
+                or self.config["train"].get(
+                    "random_rotation",
+                    True,
+                )
+            ):
+                hr = random_flip_rotate(hr)
+
+            lr = self.degradation(
+                hr,
+                (
+                    self.lr_patch_size,
+                    self.lr_patch_size,
+                ),
+            )
 
         else:
-
             hr = center_crop(
                 hr,
                 self.hr_patch_size,
             )
 
-        lr = self.degradation(
-            hr,
-            (
-                self.lr_patch_size,
-                self.lr_patch_size,
-            ),
-        )
+            deterministic_seed = (
+                self.seed + index
+            )
 
-        hr_tensor = pil_to_tensor(
-            hr
-        )
+            deterministic_degradation = (
+                DegradationPipeline(
+                    self.config,
+                    seed=deterministic_seed,
+                )
+            )
 
-        lr_tensor = pil_to_tensor(
-            lr
-        )
+            lr = deterministic_degradation(
+                hr,
+                (
+                    self.lr_patch_size,
+                    self.lr_patch_size,
+                ),
+            )
+
+        hr_tensor = pil_to_tensor(hr)
+        lr_tensor = pil_to_tensor(lr)
 
         return {
             "lr": lr_tensor,
