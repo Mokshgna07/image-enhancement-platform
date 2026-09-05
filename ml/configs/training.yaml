@@ -2,54 +2,40 @@ experiment:
   name: edsr_x4_baseline
   seed: 42
   output_dir: runs/edsr_x4_baseline
-
 model:
   scale: 4
   channels: 64
   num_blocks: 16
   residual_scale: 0.1
-
 data:
   config_path: ml/configs/degradation.yaml
-
   train_split: data/div2k/splits/train.txt
   val_split: data/div2k/splits/val.txt
-
   batch_size: 4
   num_workers: 0
-
   pin_memory: false
-
+  test_split: data/div2k/splits/test.txt
 training:
   epochs: 100
-
   device: auto
-
   loss:
     type: charbonnier
-    epsilon: 0.000001
-
+    epsilon: 1.0e-06
   optimizer:
     type: adam
     learning_rate: 0.0001
     weight_decay: 0.0
-
   scheduler:
     type: cosine
-    min_learning_rate: 0.000001
-
+    min_learning_rate: 1.0e-06
   gradient:
     max_norm: 1.0
-
   mixed_precision:
     enabled: true
-
   early_stopping:
     enabled: true
     patience: 15
     min_delta: 0.01
-
   checkpoint:
     save_every: 1
-
   log_every: 10
