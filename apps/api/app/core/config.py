@@ -44,6 +44,31 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+    access_token_expire_minutes: int = Field(
+        default=15,
+        validation_alias="ACCESS_TOKEN_EXPIRE_MINUTES",
+    )
+
+    refresh_token_expire_days: int = Field(
+        default=30,
+        validation_alias="REFRESH_TOKEN_EXPIRE_DAYS",
+    )
+
+    jwt_secret_key: str = Field(
+        default="CHANGE_ME_IN_ENVIRONMENT",
+        validation_alias="JWT_SECRET_KEY",
+    )
+
+    jwt_algorithm: str = Field(
+        default="HS256",
+        validation_alias="JWT_ALGORITHM",
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     @property
     def cors_origins_list(self) -> list[str]:
