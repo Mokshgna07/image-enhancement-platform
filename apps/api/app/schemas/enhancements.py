@@ -13,6 +13,20 @@ class EnhancementCreate(BaseModel):
     scale_factor: int = 4
 
 
+class ProcessingMetadataResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    model_version: str
+    scale_factor: int
+    input_width: int
+    input_height: int
+    output_width: int | None
+    output_height: int | None
+    processing_time_ms: float | None
+    device: str | None
+    created_at: datetime
+
+
 class EnhancementResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -25,6 +39,7 @@ class EnhancementResponse(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     failed_at: datetime | None
-    error_message: str | None
+    error: str | None = None
     created_at: datetime
     updated_at: datetime
+    processing_metadata: ProcessingMetadataResponse | None = None

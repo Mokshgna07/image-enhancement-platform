@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import select
+from sqlalchemy import func, select
+from app.schemas.pagination import PaginatedResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_database
 from app.core.config import get_settings
+from app.core.request_context import set_user_id
 from app.core.security import InvalidTokenError, decode_access_token
 from app.db.models.session import Session as SessionModel
 from app.db.models.user import User
@@ -142,6 +143,7 @@ def logout(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_database),
 ) -> None:
+    set_user_id(str(current_user.id))
     try:
         payload = decode_access_token(credentials.credentials)
         session_id = UUID(payload["sid"])
@@ -166,25 +168,59 @@ def logout(
 def me(
     current_user: User = Depends(get_current_user),
 ) -> User:
+    set_user_id(str(current_user.id))
     return current_user
 
 
 @router.get(
     "/sessions",
-    response_model=list[SessionResponse],
+    response_model=PaginatedResponse[SessionResponse],
+    summary="List active sessions",
+    description="Return the authenticated user's sessions with pagination.",
 )
 def sessions(
+    page: int = Query(
+        default=1,
+        ge=1,
+        description="Page number, starting at 1.",
+    ),
+    page_size: int = Query(
+        default=20,
+        ge=1,
+        le=100,
+        description="Number of sessions per page. Maximum 100.",
+    ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_database),
-) -> list[SessionModel]:
-    return list(
-        db.scalars(
-            select(SessionModel)
-            .where(SessionModel.user_id == current_user.id)
-            .order_by(SessionModel.created_at.desc())
-        ).all()
-    )
+) -> dict:
+    set_user_id(str(current_user.id))
+    user_filter = SessionModel.user_id == current_user.id
 
+    total = db.scalar(
+        select(func.count())
+        .select_from(SessionModel)
+        .where(user_filter)
+    ) or 0
+
+    offset = (page - 1) * page_size
+
+    sessions = db.scalars(
+        select(SessionModel)
+        .where(user_filter)
+        .order_by(
+            SessionModel.created_at.desc(),
+            SessionModel.id.desc(),
+        )
+        .offset(offset)
+        .limit(page_size)
+    ).all()
+
+    return {
+        "items": list(sessions),
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+    }
 
 @router.delete(
     "/sessions/{session_id}",
@@ -195,6 +231,7 @@ def revoke_session(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_database),
 ) -> None:
+    set_user_id(str(current_user.id))
     service = AuthenticationService(db)
 
     try:

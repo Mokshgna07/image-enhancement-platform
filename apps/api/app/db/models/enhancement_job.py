@@ -15,7 +15,7 @@ class EnhancementJobStatus(StrEnum):
     PROCESSING = "PROCESSING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
-
+    CANCELED = "CANCELED"
 
 class EnhancementJob(Base):
     __tablename__ = "enhancement_jobs"

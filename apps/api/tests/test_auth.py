@@ -77,6 +77,18 @@ def login_user(
     )
 
 
+def get_error_body(response):
+    body = response.json()
+
+    assert body["success"] is False
+    assert "error" in body
+    assert "code" in body["error"]
+    assert "message" in body["error"]
+    assert body["request_id"]
+
+    return body
+
+
 def test_register_user():
     response = register_user()
 
@@ -98,9 +110,10 @@ def test_duplicate_registration():
     assert first_response.status_code == 201
     assert second_response.status_code == 409
 
-    assert second_response.json() == {
-        "detail": "An account with this email already exists."
-    }
+    body = get_error_body(second_response)
+
+    assert body["error"]["code"] == "conflict"
+    assert body["error"]["message"] == "An account with this email already exists."
 
 
 def test_invalid_email_rejected():
@@ -136,9 +149,11 @@ def test_wrong_password_rejected():
     response = login_user(password="WrongPassword123!")
 
     assert response.status_code == 401
-    assert response.json() == {
-        "detail": "Invalid email or password."
-    }
+
+    body = get_error_body(response)
+
+    assert body["error"]["code"] == "authentication_required"
+    assert body["error"]["message"] == "Invalid email or password."
 
 
 def test_me_requires_authentication():
@@ -173,9 +188,11 @@ def test_invalid_access_token_rejected():
     )
 
     assert response.status_code == 401
-    assert response.json() == {
-        "detail": "Invalid or expired access token."
-    }
+
+    body = get_error_body(response)
+
+    assert body["error"]["code"] == "authentication_required"
+    assert body["error"]["message"] == "Invalid or expired access token."
 
 
 def test_refresh_token_rotation():
@@ -224,12 +241,17 @@ def test_session_listing():
 
     assert response.status_code == 200
 
-    sessions = response.json()
+    data = response.json()
 
-    assert len(sessions) == 1
-    assert sessions[0]["revoked_at"] is None
-    assert sessions[0]["user_agent"] is not None
+    assert data["page"] == 1
+    assert data["page_size"] == 20
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
 
+    session = data["items"][0]
+
+    assert session["revoked_at"] is None
+    assert session["user_agent"] is not None
 
 def test_logout_revokes_session():
     register_user()
@@ -281,8 +303,12 @@ def test_session_revocation():
         },
     )
 
-    session_id = sessions_response.json()[0]["id"]
+    sessions_data = sessions_response.json()
 
+    assert sessions_data["total"] == 1
+    assert len(sessions_data["items"]) == 1
+
+    session_id = sessions_data["items"][0]["id"]
     assert UUID(session_id)
 
     revoke_response = client.delete(
@@ -327,3 +353,76 @@ def test_password_hash_is_stored_not_plaintext():
         assert user is not None
         assert user.password_hash != "TestPassword123!"
         assert user.password_hash.startswith("$argon2")
+def test_session_listing_pagination():
+    register_user()
+
+    login_response = login_user()
+    access_token = login_response.json()["access_token"]
+
+    # Create additional sessions by logging in again.
+    for index in range(4):
+        response = login_user(
+            email="test@example.com",
+            password="TestPassword123!",
+        )
+        assert response.status_code == 200
+
+    response = client.get(
+        "/api/v1/auth/sessions",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+        params={
+            "page": 1,
+            "page_size": 2,
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["page"] == 1
+    assert data["page_size"] == 2
+    assert data["total"] == 5
+    assert len(data["items"]) == 2
+
+    response = client.get(
+        "/api/v1/auth/sessions",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+        params={
+            "page": 2,
+            "page_size": 2,
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["page"] == 2
+    assert data["page_size"] == 2
+    assert data["total"] == 5
+    assert len(data["items"]) == 2
+
+    response = client.get(
+        "/api/v1/auth/sessions",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+        params={
+            "page": 3,
+            "page_size": 2,
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["page"] == 3
+    assert data["page_size"] == 2
+    assert data["total"] == 5
+    assert len(data["items"]) == 1

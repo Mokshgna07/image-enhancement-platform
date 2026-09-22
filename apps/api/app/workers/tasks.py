@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import UUID
 
 from celery import Task
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -66,16 +67,35 @@ def process_enhancement(
         if job is None:
             raise ValueError(f"Enhancement job not found: {job_id}")
 
-        if job.status not in {
-            EnhancementJobStatus.QUEUED,
-            EnhancementJobStatus.PROCESSING,
-        }:
-            return
+        # Atomically claim the job for processing.
+        #
+        # If cancellation wins the race, this UPDATE affects zero rows
+        # and the worker exits without running ML inference.
+        result = db.execute(
+            update(EnhancementJob)
+            .where(
+                EnhancementJob.id == job.id,
+                EnhancementJob.status == EnhancementJobStatus.QUEUED,
+            )
+            .values(
+                status=EnhancementJobStatus.PROCESSING,
+                started_at=utc_now(),
+                error_message=None,
+            )
+        )
 
-        job.status = EnhancementJobStatus.PROCESSING
-        job.started_at = utc_now()
-        job.error_message = None
         db.commit()
+
+        if result.rowcount != 1:
+            db.refresh(job)
+
+            if job.status == EnhancementJobStatus.CANCELED:
+                return
+
+            if job.status != EnhancementJobStatus.PROCESSING:
+                return
+
+        db.refresh(job)
 
         input_image = db.get(Image, job.input_image_id)
 
@@ -142,10 +162,14 @@ def process_enhancement(
         db.rollback()
 
         if job is not None:
-            job.status = EnhancementJobStatus.FAILED
-            job.failed_at = utc_now()
-            job.error_message = str(exc)[:4000]
-            db.commit()
+            db.refresh(job)
+
+            # A canceled job must never be rewritten as FAILED.
+            if job.status != EnhancementJobStatus.CANCELED:
+                job.status = EnhancementJobStatus.FAILED
+                job.failed_at = utc_now()
+                job.error_message = str(exc)[:4000]
+                db.commit()
 
         if result_path is not None:
             storage.delete(result_path)

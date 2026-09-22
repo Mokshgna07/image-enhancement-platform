@@ -3,14 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_database
+from app.core.request_context import set_image_id, set_user_id
 from app.db.models.image import Image
 from app.db.models.user import User
 from app.dependencies.auth import get_current_user
 from app.schemas.images import ImageResponse
+from app.schemas.pagination import PaginatedResponse
 from app.services.image_processing import (
     ImageProcessingService,
     ImageUploadValidationError,
@@ -32,39 +35,6 @@ def get_image_processing_service() -> ImageProcessingService:
     return ImageProcessingService()
 
 
-def _copy_upload_to_temp(
-    upload: UploadFile,
-    storage: FileStorage,
-) -> Path:
-    temp_path = storage.create_temp_file()
-
-    try:
-        total_size = 0
-        chunk_size = 1024 * 1024
-
-        with temp_path.open("wb") as output:
-            while True:
-                chunk = upload.file.read(chunk_size)
-
-                if not chunk:
-                    break
-
-                total_size += len(chunk)
-
-                if total_size > ImageProcessingService().max_upload_size_bytes:
-                    raise ImageUploadValidationError(
-                        "Uploaded file exceeds the maximum allowed size."
-                    )
-
-                output.write(chunk)
-
-        return temp_path
-
-    except Exception:
-        storage.delete(temp_path)
-        raise
-
-
 @router.post(
     "/upload",
     response_model=ImageResponse,
@@ -79,6 +49,7 @@ def upload_image(
         get_image_processing_service,
     ),
 ) -> Image:
+    set_user_id(str(current_user.id))
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -118,6 +89,7 @@ def upload_image(
         )
 
         image_id = storage.new_image_id()
+        set_image_id(str(image_id))
 
         final_path = storage.build_image_path(
             image_id,
@@ -194,15 +166,85 @@ def upload_image(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process uploaded image.",
         )
-@router.get("/{image_id}", response_model=ImageResponse)
+
+
+@router.get(
+    "",
+    response_model=PaginatedResponse[ImageResponse],
+    summary="List uploaded images",
+    description="Return the authenticated user's uploaded images with pagination.",
+)
+def list_images(
+    page: int = Query(
+        default=1,
+        ge=1,
+        description="Page number, starting at 1.",
+    ),
+    page_size: int = Query(
+        default=20,
+        ge=1,
+        le=100,
+        description="Number of images per page. Maximum 100.",
+    ),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_database),
+) -> dict:
+    set_user_id(str(current_user.id))
+
+
+    base_query = select(Image).where(
+        Image.user_id == current_user.id,
+    )
+
+    total = db.scalar(
+        select(func.count())
+        .select_from(Image)
+        .where(Image.user_id == current_user.id)
+    ) or 0
+
+    offset = (page - 1) * page_size
+
+    images = db.scalars(
+        base_query
+        .order_by(
+            Image.created_at.desc(),
+            Image.id.desc(),
+        )
+        .offset(offset)
+        .limit(page_size)
+    ).all()
+
+    return {
+        "items": images,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+    }
+
+
+@router.get(
+    "/{image_id}",
+    response_model=ImageResponse,
+    summary="Get an image",
+    description="Return one image belonging to the authenticated user.",
+)
 def get_image(
     image_id: UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_database),
 ) -> Image:
-    image = db.get(Image, image_id)
+    set_user_id(str(current_user.id))
+    set_image_id(str(image_id))
 
-    if image is None or image.user_id != current_user.id:
+
+    image = db.scalar(
+        select(Image).where(
+            Image.id == image_id,
+            Image.user_id == current_user.id,
+        )
+    )
+
+    if image is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Image not found.",
